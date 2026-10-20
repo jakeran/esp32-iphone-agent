@@ -1,4 +1,5 @@
 import SwiftUI
+import Darwin
 
 /// The agent's mood; drives the character on Home, in onboarding, in the replay player and in the Live Activity.
 enum Mood: String, Codable, Hashable {
@@ -232,8 +233,10 @@ struct Spiral: Shape {
         let c = CGPoint(x: r.midX, y: r.midY), maxR = min(r.width, r.height) / 2
         for i in 0...60 {
             let a = Double(i) / 60 * 2.6 * 2 * .pi
-            let rad = maxR * Double(i) / 60
-            let pt = CGPoint(x: c.x + rad * cos(a), y: c.y + rad * sin(a))
+            let rad = Double(maxR) * Double(i) / 60
+            // Darwin.cos/sin 显式限定：否则 CoreGraphics.cos(CGFloat) 与 _math.cos(Double)
+            // 两个重载在 Xcode 16.4 下会报 "ambiguous use of 'cos'"
+            let pt = CGPoint(x: c.x + CGFloat(rad * Darwin.cos(a)), y: c.y + CGFloat(rad * Darwin.sin(a)))
             if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
         }
         return p
