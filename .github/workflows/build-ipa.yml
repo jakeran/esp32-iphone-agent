@@ -1,0 +1,87 @@
+# 在 GitHub 的 macOS runner 上构建「未签名 IPA」，然后在 Windows 上用 Sideloadly / SideStore
+# 用自己的 Apple ID 签名安装到 iPhone。这样不需要任何 Mac 硬件。
+#
+# 用法：
+#   1. Fork https://github.com/onehumanbeing/esp32-iphone-agent 到你自己的账号
+#   2. 把这个文件放到 fork 的 .github/workflows/build-ipa.yml
+#   3. 仓库 → Actions → build-ipa → Run workflow
+#   4. 跑完在本次运行的 Artifacts 里下载 IPhoneAgent-unsigned.ipa
+#
+# 注意：
+#   * macOS runner 只有「公开仓库」在免费额度内可用（2000 分钟/月，macOS 按 10 倍计费 ≈ 200 分钟）。
+#     私有仓库需要 GitHub Team 或按量付费，否则这个 workflow 会直接报错说不支持。
+#   * 这里刻意把 IA_ENTITLEMENTS / IA_WIDGET_ENTITLEMENTS 留空：免费 Apple ID 不支持
+#     App Groups 和 Hotspot Configuration，留空才能被 Sideloadly 顺利签名。
+#     代价：小组件 / 灵动岛实时活动不可用，加入热点要手动输密码（App 会显示密码）。
+#   * 想用付费开发者账号一步到位，就在 Local.xcconfig 里填 DEVELOPMENT_TEAM 和两个 entitlements 路径，
+#     并把下面的 CODE_SIGNING_ALLOWED=NO 换成正常签名 + exportArchive。
+
+name: build-ipa
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: 'IA_BUNDLE_ID（随便填一个你独有的反向域名）'
+        required: true
+        default: 'com.example.esp32agent'
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Write Local.xcconfig (unsigned, free-account friendly)
+        run: |
+          cat > ios/Config/Local.xcconfig <<EOF
+          DEVELOPMENT_TEAM =
+          IA_BUNDLE_ID = ${{ github.event.inputs.bundle_id }}
+          IA_ENTITLEMENTS =
+          IA_WIDGET_ENTITLEMENTS =
+          IA_PRESET_BASE_URL =
+          IA_PRESET_MODEL =
+          IA_PRESET_KEY =
+          EOF
+          cat ios/Config/Local.xcconfig
+
+      - name: Generate Xcode project
+        run: cd ios && xcodegen
+
+      - name: Build (unsigned)
+        run: |
+          cd ios
+          xcodebuild build \
+            -project IPhoneAgent.xcodeproj \
+            -scheme IPhoneAgent \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO
+
+      - name: Package unsigned IPA
+        run: |
+          APP=$(find ios/build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -1)
+          echo "app: $APP"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          # Sideloadly / SideStore 都能直接吃这种标准结构
+          zip -qry IPhoneAgent-unsigned.ipa Payload
+          ls -lh IPhoneAgent-unsigned.ipa
+          unzip -l IPhoneAgent-unsigned.ipa | head -20
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IPhoneAgent-unsigned
+          path: IPhoneAgent-unsigned.ipa
+          if-no-files-found: error
