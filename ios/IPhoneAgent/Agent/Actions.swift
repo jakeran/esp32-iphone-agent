@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// Parsing of the model's replies; a line-for-line port of agent.py (parse_command, parse_actions, parse_plan).
 enum Actions {
@@ -130,6 +131,6 @@ func points(_ act: JObject) -> [CGPoint] {
 func circle(_ x: Double, _ y: Double, _ r: Double, aspect: Double, n: Int = 24) -> [CGPoint] {
     (0...n).map { i in
         let a = 2 * Double.pi * Double(i) / Double(n)
-        return CGPoint(x: x + r * cos(a), y: y + r * aspect * sin(a))
+        return CGPoint(x: x + r * Darwin.cos(a), y: y + r * aspect * Darwin.sin(a))
     }
 }
